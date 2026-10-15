@@ -1,0 +1,6 @@
+{
+  "name": "Rujak Mba Uus - POS & Manajemen Kemasan",
+  "description": "Aplikasi POS kasir mobile, manajemen stok kemasan, kalkulator margin HPP multi-channel, dan cetak struk thermal untuk Rujak Mba Uus.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
