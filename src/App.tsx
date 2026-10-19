@@ -174,6 +174,123 @@ export const CHANNEL_COMMISSIONS: Record<Channel, number> = {
   GrabFood: 20,
 };
 
+export const CHANNEL_CONFIG: Record<
+  Channel,
+  {
+    name: Channel;
+    displayName: string;
+    icon: string;
+    activeClass: string;
+    inactiveClass: string;
+    badgeClass: string;
+    cardBorder: string;
+    bgSoft: string;
+    textDark: string;
+    ringColor: string;
+  }
+> = {
+  Offline: {
+    name: 'Offline',
+    displayName: 'Offline (Toko)',
+    icon: '🏪',
+    activeClass: 'bg-slate-800 text-white shadow-sm border-slate-900',
+    inactiveClass: 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-300',
+    badgeClass: 'bg-slate-100 text-slate-800 border border-slate-300',
+    cardBorder: 'border-slate-300',
+    bgSoft: 'bg-slate-50',
+    textDark: 'text-slate-800',
+    ringColor: 'ring-slate-700/30',
+  },
+  GoFood: {
+    name: 'GoFood',
+    displayName: 'GoFood',
+    icon: '🛵',
+    activeClass: 'bg-red-600 text-white shadow-sm border-red-700',
+    inactiveClass: 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200',
+    badgeClass: 'bg-red-50 text-red-700 border border-red-200',
+    cardBorder: 'border-red-200',
+    bgSoft: 'bg-red-50/60',
+    textDark: 'text-red-700',
+    ringColor: 'ring-red-500/30',
+  },
+  ShopeeFood: {
+    name: 'ShopeeFood',
+    displayName: 'ShopeeFood',
+    icon: '🛍️',
+    activeClass: 'bg-orange-500 text-white shadow-sm border-orange-600',
+    inactiveClass: 'bg-orange-50 text-orange-700 hover:bg-orange-100 border-orange-200',
+    badgeClass: 'bg-orange-50 text-orange-700 border border-orange-200',
+    cardBorder: 'border-orange-200',
+    bgSoft: 'bg-orange-50/60',
+    textDark: 'text-orange-700',
+    ringColor: 'ring-orange-500/30',
+  },
+  GrabFood: {
+    name: 'GrabFood',
+    displayName: 'GrabFood',
+    icon: '🟢',
+    activeClass: 'bg-emerald-600 text-white shadow-sm border-emerald-700',
+    inactiveClass: 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border-emerald-200',
+    badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    cardBorder: 'border-emerald-200',
+    bgSoft: 'bg-emerald-50/60',
+    textDark: 'text-emerald-800',
+    ringColor: 'ring-emerald-500/30',
+  },
+};
+
+export type SpicinessLevel = 'Tidak Pedas' | 'Sedang' | 'Pedas' | 'Extra Pedas';
+
+export const SPICINESS_CONFIG: Record<
+  SpicinessLevel,
+  {
+    name: SpicinessLevel;
+    icon: string;
+    labelShort: string;
+    activeClass: string;
+    inactiveClass: string;
+    badgeClass: string;
+    textClass: string;
+  }
+> = {
+  'Tidak Pedas': {
+    name: 'Tidak Pedas',
+    icon: '🍃',
+    labelShort: '0 Cabe',
+    activeClass: 'bg-emerald-600 text-white border-emerald-700 shadow-sm shadow-emerald-600/30 ring-1 ring-emerald-500',
+    inactiveClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/90 hover:bg-emerald-100 hover:border-emerald-300',
+    badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-200',
+    textClass: 'text-emerald-700',
+  },
+  'Sedang': {
+    name: 'Sedang',
+    icon: '🌶️',
+    labelShort: 'Sedang',
+    activeClass: 'bg-amber-500 text-slate-950 font-black border-amber-600 shadow-sm shadow-amber-500/30 ring-1 ring-amber-400',
+    inactiveClass: 'bg-amber-50 text-amber-900 border-amber-200/90 hover:bg-amber-100 hover:border-amber-300',
+    badgeClass: 'bg-amber-50 text-amber-900 border border-amber-200',
+    textClass: 'text-amber-800',
+  },
+  'Pedas': {
+    name: 'Pedas',
+    icon: '🌶️🌶️',
+    labelShort: 'Pedas',
+    activeClass: 'bg-orange-600 text-white border-orange-700 shadow-sm shadow-orange-600/30 ring-1 ring-orange-500',
+    inactiveClass: 'bg-orange-50 text-orange-950 border-orange-200/90 hover:bg-orange-100 hover:border-orange-300',
+    badgeClass: 'bg-orange-50 text-orange-900 border border-orange-200',
+    textClass: 'text-orange-700',
+  },
+  'Extra Pedas': {
+    name: 'Extra Pedas',
+    icon: '🔥',
+    labelShort: 'Ekstra',
+    activeClass: 'bg-red-600 text-white border-red-700 shadow-sm shadow-red-600/40 ring-1 ring-red-500',
+    inactiveClass: 'bg-red-50 text-red-950 border-red-200/90 hover:bg-red-100 hover:border-red-300',
+    badgeClass: 'bg-red-50 text-red-800 border border-red-200',
+    textClass: 'text-red-700',
+  },
+};
+
 // ==================== AUDIO SYNTHESIZER ====================
 class SoundHelper {
   private ctx: AudioContext | null = null;
@@ -1093,7 +1210,13 @@ export default function App() {
             <ShoppingCart className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight">Pesanan Aktif</h3>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900 truncate leading-tight">Pesanan Aktif</h3>
+              <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold inline-flex items-center gap-1 ${CHANNEL_CONFIG[selectedChannel].badgeClass}`}>
+                <span>{CHANNEL_CONFIG[selectedChannel].icon}</span>
+                <span>{selectedChannel}</span>
+              </span>
+            </div>
             <span className="text-[10px] text-slate-400 font-medium block truncate">
               {cart.length} item dipilih ({cartPortionCount} porsi)
             </span>
@@ -1160,9 +1283,16 @@ export default function App() {
                     <div className="font-bold text-slate-900 truncate text-[11px] sm:text-xs leading-snug">
                       {cItem.menuItem.name}
                     </div>
-                    <div className="text-[9px] sm:text-[10px] text-slate-900 font-semibold truncate">
-                      {cItem.spicinessLevel !== '-' && `Pedas: ${cItem.spicinessLevel}`}
-                      {cItem.notes && ` • ${cItem.notes}`}
+                    <div className="text-[9px] sm:text-[10px] text-slate-900 font-semibold truncate flex items-center gap-1.5 mt-0.5">
+                      {cItem.spicinessLevel !== '-' && (
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                          SPICINESS_CONFIG[cItem.spicinessLevel as SpicinessLevel]?.badgeClass || 'bg-slate-100 text-slate-700'
+                        }`}>
+                          <span>{SPICINESS_CONFIG[cItem.spicinessLevel as SpicinessLevel]?.icon || '🌶️'}</span>
+                          <span>{cItem.spicinessLevel}</span>
+                        </span>
+                      )}
+                      {cItem.notes && <span className="text-slate-500 font-normal truncate">• {cItem.notes}</span>}
                     </div>
                     <div className="text-[10px] text-slate-400 font-medium">
                       Rp {cItem.channelPrice.toLocaleString('id-ID')} / porsi
@@ -1697,9 +1827,13 @@ export default function App() {
                   {(['Offline', 'GoFood', 'ShopeeFood', 'GrabFood'] as Channel[]).map(ch => {
                     const chCount = todayTransactions.filter(t => t.channel === ch).length;
                     const chGross = todayTransactions.filter(t => t.channel === ch).reduce((s, t) => s + t.finalGrossAmount, 0);
+                    const cfg = CHANNEL_CONFIG[ch];
                     return (
-                      <div key={ch} className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                        <span className="text-[10px] font-bold text-slate-700 block truncate">{ch}</span>
+                      <div key={ch} className={`p-2 rounded-xl border ${cfg.bgSoft} ${cfg.cardBorder}`}>
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="text-[10px]">{cfg.icon}</span>
+                          <span className={`text-[10px] font-bold ${cfg.textDark} block truncate`}>{ch}</span>
+                        </div>
                         <span className="text-sm font-extrabold text-slate-900 block my-0.5">{chCount}</span>
                         <span className="text-[9px] text-slate-500 font-medium block truncate">
                           {chGross > 0 ? `Rp ${(chGross/1000).toFixed(0)}k` : '-'}
@@ -1722,7 +1856,13 @@ export default function App() {
                     <div key={trx.id} className="py-1.5 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-bold text-slate-800 truncate">{trx.customerName || 'Pelanggan'}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{trx.receiptNumber} • {trx.channel}</div>
+                        <div className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                          <span>{trx.receiptNumber}</span>
+                          <span>•</span>
+                          <span className={`font-semibold ${CHANNEL_CONFIG[trx.channel]?.textDark || 'text-slate-600'}`}>
+                            {CHANNEL_CONFIG[trx.channel]?.icon} {trx.channel}
+                          </span>
+                        </div>
                       </div>
                       <div className="text-right shrink-0">
                         <div className="font-extrabold text-emerald-600">Rp {trx.finalGrossAmount.toLocaleString('id-ID')}</div>
@@ -1834,6 +1974,7 @@ export default function App() {
                             <div className="grid grid-cols-4 gap-1 flex-1 min-w-0">
                               {(['Offline', 'GoFood', 'ShopeeFood', 'GrabFood'] as Channel[]).map(ch => {
                                 const isSelected = selectedChannel === ch;
+                                const cfg = CHANNEL_CONFIG[ch];
                                 return (
                                   <button
                                     key={ch}
@@ -1841,17 +1982,12 @@ export default function App() {
                                       setSelectedChannel(ch);
                                       audioPlayer.playBeep();
                                     }}
-                                    className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all truncate text-center ${
+                                    className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all truncate text-center flex items-center justify-center border ${
                                       isSelected
-                                        ? ch === 'Offline'
-                                          ? 'bg-emerald-500 text-white shadow-xs'
-                                          : ch === 'GoFood'
-                                          ? 'bg-red-600 text-white shadow-xs'
-                                          : ch === 'ShopeeFood'
-                                          ? 'bg-emerald-700 text-white shadow-xs'
-                                          : 'bg-emerald-600 text-white shadow-xs'
-                                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
+                                        ? `${cfg.activeClass} ring-2 ${cfg.ringColor}`
+                                        : `${cfg.inactiveClass}`
                                     }`}
+                                    title={`Saluran: ${ch}`}
                                   >
                                     <span className="truncate">{ch}</span>
                                   </button>
@@ -1876,27 +2012,30 @@ export default function App() {
                         {/* 2. Baris Terpisah: Pilihan Level Pedas Rujak & Kategori */}
                         <div className="bg-white px-2 py-1.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 shrink-0">
                           <div className="flex items-center gap-1.5 overflow-x-auto min-w-0">
-                            <span className="text-[10px] font-bold text-slate-800 shrink-0 flex items-center gap-1">
-                              <span>🌶️</span>
-                              <span>Level Pedas:</span>
+                            <span className="text-[10px] font-bold text-slate-800 shrink-0">
+                              Level Pedas:
                             </span>
                             <div className="flex items-center gap-1">
-                              {['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'].map(lvl => (
-                                <button
-                                  key={lvl}
-                                  onClick={() => {
-                                    setSelectedSpiciness(lvl);
-                                    audioPlayer.playBeep();
-                                  }}
-                                  className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap transition-colors ${
-                                    selectedSpiciness === lvl
-                                      ? 'bg-emerald-500 text-white shadow-xs'
-                                      : 'bg-emerald-50 text-emerald-600 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {lvl}
-                                </button>
-                              ))}
+                              {(['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'] as SpicinessLevel[]).map(lvl => {
+                                const isSelected = selectedSpiciness === lvl;
+                                const cfg = SPICINESS_CONFIG[lvl];
+                                return (
+                                  <button
+                                    key={lvl}
+                                    onClick={() => {
+                                      setSelectedSpiciness(lvl);
+                                      audioPlayer.playBeep();
+                                    }}
+                                    className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap transition-all duration-150 border ${
+                                      isSelected
+                                        ? cfg.activeClass
+                                        : cfg.inactiveClass
+                                    }`}
+                                  >
+                                    <span>{lvl}</span>
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
 
@@ -2013,6 +2152,7 @@ export default function App() {
                         <div className="flex items-center gap-1 flex-1 min-w-0">
                           {(['Offline', 'GoFood', 'ShopeeFood', 'GrabFood'] as Channel[]).map(ch => {
                             const isSelected = selectedChannel === ch;
+                            const cfg = CHANNEL_CONFIG[ch];
                             return (
                               <button
                                 key={ch}
@@ -2020,17 +2160,12 @@ export default function App() {
                                   setSelectedChannel(ch);
                                   audioPlayer.playBeep();
                                 }}
-                                className={`flex-1 py-1 px-1 rounded-lg text-[9px] font-bold transition-all truncate ${
+                                className={`flex-1 py-1 px-1 rounded-lg text-[9px] font-bold transition-all truncate flex items-center justify-center border ${
                                   isSelected
-                                    ? ch === 'Offline'
-                                      ? 'bg-emerald-500 text-white'
-                                      : ch === 'GoFood'
-                                      ? 'bg-red-600 text-white'
-                                      : ch === 'ShopeeFood'
-                                      ? 'bg-emerald-700 text-white'
-                                      : 'bg-emerald-600 text-white'
-                                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
+                                    ? `${cfg.activeClass} ring-1.5 ${cfg.ringColor}`
+                                    : `${cfg.inactiveClass}`
                                 }`}
+                                title={`Saluran: ${ch}`}
                               >
                                 <span className="truncate">{ch}</span>
                               </button>
@@ -2053,22 +2188,28 @@ export default function App() {
 
                       {/* Level Pedas */}
                       <div className="flex items-center justify-between gap-1 bg-white p-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0 text-[10px]">
-                        <span className="font-bold text-slate-700 shrink-0">🌶️ Pedas:</span>
+                        <span className="font-bold text-slate-700 shrink-0">
+                          Pedas:
+                        </span>
                         <div className="flex items-center gap-1 overflow-x-auto">
-                          {['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'].map(lvl => (
-                            <button
-                              key={lvl}
-                              onClick={() => {
-                                setSelectedSpiciness(lvl);
-                                audioPlayer.playBeep();
-                              }}
-                              className={`px-2 py-0.5 rounded-md font-bold whitespace-nowrap transition-colors ${
-                                selectedSpiciness === lvl ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                              }`}
-                            >
-                              {lvl}
-                            </button>
-                          ))}
+                          {(['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'] as SpicinessLevel[]).map(lvl => {
+                            const isSelected = selectedSpiciness === lvl;
+                            const cfg = SPICINESS_CONFIG[lvl];
+                            return (
+                              <button
+                                key={lvl}
+                                onClick={() => {
+                                  setSelectedSpiciness(lvl);
+                                  audioPlayer.playBeep();
+                                }}
+                                className={`px-2 py-0.5 rounded-md font-bold whitespace-nowrap transition-all duration-150 border text-[9.5px] ${
+                                  isSelected ? cfg.activeClass : cfg.inactiveClass
+                                }`}
+                              >
+                                <span>{lvl}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -2127,6 +2268,7 @@ export default function App() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {(['Offline', 'GoFood', 'ShopeeFood', 'GrabFood'] as Channel[]).map(ch => {
                       const isSelected = selectedChannel === ch;
+                      const cfg = CHANNEL_CONFIG[ch];
                       return (
                         <button
                           key={ch}
@@ -2134,17 +2276,12 @@ export default function App() {
                             setSelectedChannel(ch);
                             audioPlayer.playBeep();
                           }}
-                          className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center ${
+                          className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center border ${
                             isSelected
-                              ? ch === 'Offline'
-                                ? 'bg-emerald-500 text-white shadow-xs'
-                                : ch === 'GoFood'
-                                ? 'bg-red-600 text-white shadow-xs'
-                                : ch === 'ShopeeFood'
-                                ? 'bg-emerald-700 text-white shadow-xs'
-                                : 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
+                              ? `${cfg.activeClass} ring-2 ${cfg.ringColor} scale-[1.02]`
+                              : `${cfg.inactiveClass}`
                           }`}
+                          title={`Saluran: ${ch}`}
                         >
                           <span className="truncate">{ch}</span>
                         </button>
@@ -2155,22 +2292,28 @@ export default function App() {
 
                 {/* Level Pedas */}
                 <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 overflow-x-auto">
-                  <span className="text-[11px] font-bold text-slate-800 shrink-0">🌶️ Level Pedas:</span>
+                  <span className="text-[11px] font-bold text-slate-800 shrink-0">
+                    Level Pedas:
+                  </span>
                   <div className="flex items-center gap-1">
-                    {['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'].map(lvl => (
-                      <button
-                        key={lvl}
-                        onClick={() => {
-                          setSelectedSpiciness(lvl);
-                          audioPlayer.playBeep();
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-colors ${
-                          selectedSpiciness === lvl ? 'bg-emerald-500 text-white shadow-xs' : 'bg-emerald-50 text-emerald-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        {lvl}
-                      </button>
-                    ))}
+                    {(['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'] as SpicinessLevel[]).map(lvl => {
+                      const isSelected = selectedSpiciness === lvl;
+                      const cfg = SPICINESS_CONFIG[lvl];
+                      return (
+                        <button
+                          key={lvl}
+                          onClick={() => {
+                            setSelectedSpiciness(lvl);
+                            audioPlayer.playBeep();
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all duration-150 border ${
+                            isSelected ? cfg.activeClass : cfg.inactiveClass
+                          }`}
+                        >
+                          <span>{lvl}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -2178,7 +2321,10 @@ export default function App() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between px-1">
                     <h3 className="text-xs font-bold text-slate-800">Daftar Menu Rujak Segar</h3>
-                    <span className="text-[10px] text-slate-400">Harga: {selectedChannel}</span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1 ${CHANNEL_CONFIG[selectedChannel].badgeClass}`}>
+                      <span>{CHANNEL_CONFIG[selectedChannel].icon}</span>
+                      <span>Harga: {selectedChannel}</span>
+                    </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2245,7 +2391,10 @@ export default function App() {
                 <div key={trx.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between gap-2 text-xs">
                   <div>
                     <div className="flex items-center justify-between">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-600">{trx.channel}</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold inline-flex items-center gap-1 ${CHANNEL_CONFIG[trx.channel]?.badgeClass || 'bg-slate-100 text-slate-700'}`}>
+                        <span>{CHANNEL_CONFIG[trx.channel]?.icon}</span>
+                        <span>{trx.channel}</span>
+                      </span>
                       <span className="text-[10px] text-slate-400">{trx.timestamp}</span>
                     </div>
                     <div className="font-bold text-slate-900 mt-1.5 truncate">{trx.customerName || 'Pelanggan'}</div>
@@ -2683,11 +2832,15 @@ export default function App() {
                   const profit = netReceive - totalHpp;
                   const marginPct = sellPrice > 0 ? ((profit / sellPrice) * 100).toFixed(1) : '0';
 
+                  const cfg = CHANNEL_CONFIG[ch];
                   return (
-                    <div key={ch} className="p-3 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2">
+                    <div key={ch} className={`p-3 rounded-2xl border ${cfg.cardBorder} ${cfg.bgSoft} space-y-2`}>
                       <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-xs text-slate-900">{ch}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-bold">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs">{cfg.icon}</span>
+                          <span className={`font-extrabold text-xs ${cfg.textDark}`}>{ch}</span>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${cfg.badgeClass}`}>
                           Fee {feePct}%
                         </span>
                       </div>
@@ -2787,7 +2940,10 @@ export default function App() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-slate-900 truncate">{trx.customerName || 'Pelanggan'}</span>
-                        <span className="text-[9px] px-1.5 py-0.2 rounded-md font-bold bg-slate-100 text-slate-700">{trx.channel}</span>
+                        <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold inline-flex items-center gap-1 ${CHANNEL_CONFIG[trx.channel]?.badgeClass || 'bg-slate-100 text-slate-700'}`}>
+                          <span>{CHANNEL_CONFIG[trx.channel]?.icon}</span>
+                          <span>{trx.channel}</span>
+                        </span>
                       </div>
                       <span className="text-[10px] text-slate-400 block truncate">{trx.receiptNumber} • {trx.timestamp}</span>
                     </div>
