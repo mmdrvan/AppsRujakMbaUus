@@ -309,7 +309,7 @@ export default function App() {
     }
   });
 
-  // Persistent State: Stock Kemasan with robust migration and fallback
+  // Persistent State: Stock Kemasan with dynamic CRUD support & localStorage
   const [packagingList, setPackagingList] = useState<PackagingItem[]>(() => {
     try {
       const saved = localStorage.getItem('rujak_packaging_stock');
@@ -317,19 +317,18 @@ export default function App() {
       const parsed = JSON.parse(saved);
       if (!Array.isArray(parsed) || parsed.length === 0) return INITIAL_PACKAGING;
 
-      // Merge with INITIAL_PACKAGING to guarantee all fields (especially unitCost & minStock) exist and are valid numbers
-      return INITIAL_PACKAGING.map((initItem, idx) => {
-        const found = parsed.find((p: Partial<PackagingItem>) => p && (p.id === initItem.id || p.name === initItem.name)) || parsed[idx] || {};
-        return {
-          id: initItem.id,
-          name: initItem.name,
-          unit: initItem.unit,
-          stock: typeof found.stock === 'number' && !isNaN(found.stock) ? found.stock : initItem.stock,
-          minStock: typeof found.minStock === 'number' && !isNaN(found.minStock) ? found.minStock : initItem.minStock,
-          unitCost: typeof found.unitCost === 'number' && !isNaN(found.unitCost) ? found.unitCost : initItem.unitCost,
-          category: initItem.category,
-        };
-      });
+      // Map parsed items safely ensuring all numeric and required fields are valid
+      return parsed.map((item: Partial<PackagingItem>, idx: number) => ({
+        id: item?.id || `pkg-${Date.now()}-${idx}`,
+        name: item?.name || `Kemasan ${idx + 1}`,
+        unit: item?.unit || 'pcs',
+        stock: typeof item?.stock === 'number' && !isNaN(item.stock) ? item.stock : 0,
+        minStock: typeof item?.minStock === 'number' && !isNaN(item.minStock) ? item.minStock : 10,
+        unitCost: typeof item?.unitCost === 'number' && !isNaN(item.unitCost) ? item.unitCost : 0,
+        category: (item?.category && ['container', 'cutlery', 'condiment', 'label'].includes(item.category))
+          ? (item.category as 'container' | 'cutlery' | 'condiment' | 'label')
+          : 'container',
+      }));
     } catch {
       return INITIAL_PACKAGING;
     }
@@ -448,12 +447,24 @@ export default function App() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Packaging Modal State
+  // Packaging Modal State (Restock, Edit & Tambah Kemasan)
   const [selectedPkgForRestock, setSelectedPkgForRestock] = useState<PackagingItem | null>(null);
   const [restockAmount, setRestockAmount] = useState<number>(50);
   const [selectedPkgForEdit, setSelectedPkgForEdit] = useState<PackagingItem | null>(null);
   const [editUnitCost, setEditUnitCost] = useState<number>(0);
   const [editMinStock, setEditMinStock] = useState<number>(0);
+  const [editPkgName, setEditPkgName] = useState<string>('');
+  const [editPkgCategory, setEditPkgCategory] = useState<'container' | 'cutlery' | 'condiment' | 'label'>('container');
+  const [editPkgUnit, setEditPkgUnit] = useState<string>('pcs');
+
+  // Add Packaging Modal State
+  const [showAddPkgModal, setShowAddPkgModal] = useState(false);
+  const [pkgFormName, setPkgFormName] = useState('');
+  const [pkgFormCategory, setPkgFormCategory] = useState<'container' | 'cutlery' | 'condiment' | 'label'>('container');
+  const [pkgFormUnit, setPkgFormUnit] = useState('pcs');
+  const [pkgFormStock, setPkgFormStock] = useState<number>(100);
+  const [pkgFormMinStock, setPkgFormMinStock] = useState<number>(25);
+  const [pkgFormCost, setPkgFormCost] = useState<number>(500);
 
   // Menu Management Modal State (Add / Edit)
   const [showMenuModal, setShowMenuModal] = useState(false);
@@ -775,18 +786,75 @@ export default function App() {
     setSelectedPkgForRestock(null);
   };
 
-  const handleOpenEditCost = (item: PackagingItem) => {
+  const handleOpenAddPackaging = () => {
+    setPkgFormName('');
+    setPkgFormCategory('container');
+    setPkgFormUnit('pcs');
+    setPkgFormStock(100);
+    setPkgFormMinStock(25);
+    setPkgFormCost(500);
+    setShowAddPkgModal(true);
+  };
+
+  const handleSaveNewPackaging = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pkgFormName.trim()) {
+      showToast('Nama kemasan wajib diisi!');
+      return;
+    }
+    const newPkg: PackagingItem = {
+      id: `pkg-${Date.now()}`,
+      name: pkgFormName.trim(),
+      category: pkgFormCategory,
+      unit: pkgFormUnit.trim() || 'pcs',
+      stock: Math.max(0, Number(pkgFormStock) || 0),
+      minStock: Math.max(1, Number(pkgFormMinStock) || 1),
+      unitCost: Math.max(0, Number(pkgFormCost) || 0),
+    };
+    setPackagingList(prev => [...prev, newPkg]);
+    audioPlayer.playSuccess();
+    showToast(`Kemasan "${newPkg.name}" berhasil ditambahkan!`);
+    setShowAddPkgModal(false);
+  };
+
+  const handleDeletePackaging = (item: PackagingItem) => {
+    if (role !== 'owner') {
+      showToast('Akses dibatasi: Hanya Owner yang dapat menghapus data kemasan.');
+      return;
+    }
+    if (confirm(`Yakin ingin menghapus kemasan "${item.name}" dari daftar stok?`)) {
+      setPackagingList(prev => prev.filter(p => p.id !== item.id));
+      audioPlayer.playBeep();
+      showToast(`Kemasan "${item.name}" berhasil dihapus!`);
+      if (selectedPkgForEdit?.id === item.id) {
+        setSelectedPkgForEdit(null);
+      }
+    }
+  };
+
+  const handleOpenEditPackaging = (item: PackagingItem) => {
     setSelectedPkgForEdit(item);
+    setEditPkgName(item.name);
+    setEditPkgCategory(item.category || 'container');
+    setEditPkgUnit(item.unit || 'pcs');
     setEditUnitCost(item.unitCost ?? 0);
     setEditMinStock(item.minStock ?? 0);
   };
 
-  const handleSaveEditCost = () => {
+  const handleSaveEditPackaging = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!selectedPkgForEdit) return;
+    if (!editPkgName.trim()) {
+      showToast('Nama kemasan tidak boleh kosong!');
+      return;
+    }
     setPackagingList(prev => prev.map(p => {
       if (p.id === selectedPkgForEdit.id) {
         return {
           ...p,
+          name: editPkgName.trim(),
+          category: editPkgCategory,
+          unit: editPkgUnit.trim() || 'pcs',
           unitCost: Math.max(0, Number(editUnitCost) || 0),
           minStock: Math.max(1, Number(editMinStock) || 1)
         };
@@ -794,7 +862,7 @@ export default function App() {
       return p;
     }));
     audioPlayer.playSuccess();
-    showToast(`Biaya kemasan ${selectedPkgForEdit.name} berhasil diperbarui!`);
+    showToast(`Data kemasan "${editPkgName.trim()}" berhasil diperbarui!`);
     setSelectedPkgForEdit(null);
   };
 
@@ -1021,7 +1089,7 @@ export default function App() {
       {/* Cart Header */}
       <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1.5 bg-orange-50 text-orange-600 rounded-xl shrink-0">
+          <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
             <ShoppingCart className="w-4 h-4" />
           </div>
           <div className="min-w-0">
@@ -1040,7 +1108,7 @@ export default function App() {
                 setMobileLandscapeTab('menu');
                 audioPlayer.playBeep();
               }}
-              className="text-[10px] sm:text-xs font-bold text-orange-600 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
+              className="text-[10px] sm:text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Tambah Menu</span>
@@ -1062,7 +1130,7 @@ export default function App() {
 
       {cart.length === 0 ? (
         <div className="py-8 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-2 flex-1">
-          <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-300">
+          <div className="w-12 h-12 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-400">
             <ShoppingCart className="w-6 h-6" />
           </div>
           <p className="font-bold text-slate-700">Keranjang Masih Kosong</p>
@@ -1072,7 +1140,7 @@ export default function App() {
           {isLandscape && landscapeLayoutMode === 'tab' && (
             <button
               onClick={() => setMobileLandscapeTab('menu')}
-              className="mt-2 px-3 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+              className="mt-2 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Buka Menu Rujak</span>
@@ -1092,7 +1160,7 @@ export default function App() {
                     <div className="font-bold text-slate-900 truncate text-[11px] sm:text-xs leading-snug">
                       {cItem.menuItem.name}
                     </div>
-                    <div className="text-[9px] sm:text-[10px] text-orange-600 font-semibold truncate">
+                    <div className="text-[9px] sm:text-[10px] text-slate-900 font-semibold truncate">
                       {cItem.spicinessLevel !== '-' && `Pedas: ${cItem.spicinessLevel}`}
                       {cItem.notes && ` • ${cItem.notes}`}
                     </div>
@@ -1132,7 +1200,7 @@ export default function App() {
             {/* Inputs & options inside scroll area */}
             <div className="pt-2 border-t border-slate-100 space-y-2">
               {/* Cutlery Toggle */}
-              <div className="p-2 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-[11px] text-slate-700">
+              <div className="p-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-[11px] text-slate-700">
                 <span className="font-medium truncate pr-1">🥄 Sendok & Garpu Kemasan</span>
                 <label className="relative inline-flex items-center cursor-pointer shrink-0">
                   <input
@@ -1141,7 +1209,7 @@ export default function App() {
                     onChange={(e) => setIncludeCutlery(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-7 h-3.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500"></div>
+                  <div className="w-7 h-3.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
                 </label>
               </div>
 
@@ -1154,7 +1222,7 @@ export default function App() {
                     placeholder="Contoh: Bpk Budi"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full text-[11px] p-1.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:border-orange-500"
+                    className="w-full text-[11px] p-1.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div className="min-w-0">
@@ -1164,7 +1232,7 @@ export default function App() {
                     placeholder="Rp 0"
                     value={discountAmount || ''}
                     onChange={(e) => setDiscountAmount(Math.max(0, Number(e.target.value)))}
-                    className="w-full text-[11px] p-1.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:border-orange-500"
+                    className="w-full text-[11px] p-1.5 rounded-lg bg-white border border-slate-200 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -1182,7 +1250,7 @@ export default function App() {
                       }}
                       className={`py-1.5 px-1 rounded-lg text-[10px] font-bold border transition-colors truncate ${
                         selectedPayment === pm
-                          ? 'bg-orange-500 text-white border-orange-500 shadow-xs'
+                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
                           : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
@@ -1194,22 +1262,22 @@ export default function App() {
 
               {/* Tunai quick inputs */}
               {selectedPayment === 'Tunai' && (
-                <div className="p-2 rounded-xl bg-orange-50/70 border border-orange-100 space-y-1.5">
+                <div className="p-2 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
                   <div className="flex items-center justify-between text-xs gap-1">
-                    <span className="font-bold text-orange-950 text-[10px] shrink-0">Uang Diterima:</span>
+                    <span className="font-bold text-slate-700 text-[10px] shrink-0">Uang Diterima:</span>
                     <input
                       type="number"
                       placeholder="Nominal"
                       value={cashGiven}
                       onChange={(e) => setCashGiven(e.target.value)}
-                      className="w-28 text-right p-1 bg-white font-bold text-xs rounded-lg border border-orange-200 focus:outline-none focus:border-orange-500"
+                      className="w-28 text-right p-1 bg-white font-bold text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-emerald-500"
                     />
                   </div>
 
                   <div className="flex items-center justify-end gap-1 flex-wrap">
                     <button
                       onClick={() => setCashGiven(cartFinalGross.toString())}
-                      className="px-2 py-0.5 bg-white text-[9px] font-bold text-orange-700 rounded-md border border-orange-200 hover:bg-orange-100"
+                      className="px-2 py-0.5 bg-emerald-100 text-[9px] font-extrabold text-emerald-700 rounded-md border border-emerald-200 hover:bg-emerald-200"
                     >
                       Uang Pas
                     </button>
@@ -1225,7 +1293,7 @@ export default function App() {
                   </div>
 
                   {numericCashGiven > 0 && (
-                    <div className="flex items-center justify-between pt-1 border-t border-orange-200/60 text-[10px]">
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200 text-[10px]">
                       <span className="font-semibold text-slate-700">Kembalian:</span>
                       <span className={`font-black ${isCashInsufficient ? 'text-red-600' : 'text-emerald-700'}`}>
                         {isCashInsufficient
@@ -1243,7 +1311,7 @@ export default function App() {
           <div className="pt-2 border-t border-slate-100 shrink-0 mt-2 space-y-1.5">
             <div className="flex justify-between items-baseline text-slate-900">
               <span className="text-[11px] font-bold">Total Tagihan:</span>
-              <span className="text-sm sm:text-base font-black text-orange-600">
+              <span className="text-sm sm:text-base font-black text-slate-900">
                 Rp {cartFinalGross.toLocaleString('id-ID')}
               </span>
             </div>
@@ -1254,7 +1322,7 @@ export default function App() {
               className={`w-full py-2.5 rounded-xl font-extrabold text-xs text-white shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-[0.99] ${
                 isCashInsufficient
                   ? 'bg-slate-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm'
               }`}
             >
               <Receipt className="w-3.5 h-3.5" />
@@ -1267,10 +1335,10 @@ export default function App() {
   );
 
   return (
-    <div className="w-full min-h-screen bg-[#F9FAFB] text-slate-800 flex flex-col font-sans">
+    <div className="w-full min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-2.5 z-50 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-slate-900/95 text-white text-xs font-bold rounded-full shadow-lg backdrop-blur-sm flex items-center gap-2 animate-bounce">
+        <div className="fixed top-2.5 z-50 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-full shadow-lg border border-slate-700 backdrop-blur-sm flex items-center gap-2 animate-bounce">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -1282,7 +1350,7 @@ export default function App() {
       }`}>
         {/* Brand identity */}
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-xs font-black text-sm sm:text-base shrink-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-xs font-black text-sm sm:text-base shrink-0 border border-emerald-300/30">
             🍍
           </div>
           <div className="min-w-0">
@@ -1291,7 +1359,7 @@ export default function App() {
                 Rujak Mba Uus
               </h1>
               <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full shrink-0 ${
-                role === 'owner' ? 'bg-amber-100 text-amber-800' : 'bg-orange-100 text-orange-700'
+                role === 'owner' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 {role === 'owner' ? 'Owner' : 'Kasir'}
               </span>
@@ -1304,19 +1372,19 @@ export default function App() {
 
         {/* Landscape Tab Switcher in Header (when bottom nav is absent) */}
         {isLandscape && (
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl shrink-0">
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 shrink-0">
             {role === 'kasir' ? (
               <>
                 <button
                   onClick={() => { setActiveTab('pos'); audioPlayer.playBeep(); }}
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
-                    activeTab === 'pos' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                    activeTab === 'pos' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   <ShoppingCart className="w-3 h-3" />
                   <span>Kasir POS</span>
                   {cart.length > 0 && (
-                    <span className="w-3.5 h-3.5 bg-white text-orange-600 rounded-full text-[8px] flex items-center justify-center font-black">
+                    <span className="w-3.5 h-3.5 bg-amber-400 text-slate-900 rounded-full text-[8px] flex items-center justify-center font-black">
                       {cart.length}
                     </span>
                   )}
@@ -1324,7 +1392,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('receipts'); audioPlayer.playBeep(); }}
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
-                    activeTab === 'receipts' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                    activeTab === 'receipts' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   <History className="w-3 h-3" />
@@ -1333,7 +1401,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('packaging'); audioPlayer.playBeep(); }}
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${
-                    activeTab === 'packaging' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                    activeTab === 'packaging' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   <Package className="w-3 h-3" />
@@ -1345,7 +1413,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('dashboard'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'dashboard' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'dashboard' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   Beranda
@@ -1353,7 +1421,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('pos'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'pos' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'pos' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   POS ({cart.length})
@@ -1361,7 +1429,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('menu'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'menu' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'menu' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   Menu ({menuList.length})
@@ -1369,7 +1437,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('packaging'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'packaging' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'packaging' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   Kemasan
@@ -1377,7 +1445,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('margin'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'margin' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'margin' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   HPP
@@ -1385,7 +1453,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('report'); audioPlayer.playBeep(); }}
                   className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-                    activeTab === 'report' ? 'bg-orange-600 text-white shadow-xs' : 'text-slate-600'
+                    activeTab === 'report' ? 'bg-emerald-500 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
                   }`}
                 >
                   Laporan
@@ -1399,15 +1467,15 @@ export default function App() {
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <button
             onClick={toggleSound}
-            className="p-1 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+            className="p-1 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50"
             title={soundEnabled ? 'Mute' : 'Aktifkan Audio'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-orange-600" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
           <button
             onClick={toggleFullscreen}
-            className={`p-1 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 ${isFullscreen ? 'text-orange-600 bg-orange-50' : ''}`}
+            className={`p-1 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 ${isFullscreen ? 'text-emerald-600 bg-emerald-50' : ''}`}
             title="Layar Penuh"
           >
             {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
@@ -1417,18 +1485,18 @@ export default function App() {
             onClick={handleSwitchRoleClick}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold border transition-all ${
               role === 'owner'
-                ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
-                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                ? 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-700'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             {role === 'owner' ? (
               <>
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <ShieldCheck className="w-3.5 h-3.5 text-white shrink-0" />
                 <span>Owner</span>
               </>
             ) : (
               <>
-                <User className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                <User className="w-3.5 h-3.5 text-slate-700 shrink-0" />
                 <span>Masuk Owner</span>
               </>
             )}
@@ -1445,14 +1513,14 @@ export default function App() {
             {lowStockItems.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 shadow-xs flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                   <p className="text-[11px] text-amber-800 font-semibold truncate">
                     {lowStockItems.length} Kemasan Menipis: {lowStockItems.map(i => `${i.name} (${i.stock})`).join(', ')}
                   </p>
                 </div>
                 <button
                   onClick={() => setActiveTab('packaging')}
-                  className="text-xs font-bold text-orange-700 bg-white px-2.5 py-1 rounded-lg border border-amber-200 shrink-0"
+                  className="text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 px-2.5 py-1 rounded-lg shrink-0"
                 >
                   Lihat Stok
                 </button>
@@ -1460,29 +1528,29 @@ export default function App() {
             )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-              <div className="bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl p-3 text-white shadow-xs">
-                <span className="text-[11px] opacity-90 block">Omset Hari Ini</span>
-                <div className="text-base sm:text-lg font-extrabold mt-1 truncate">
+              <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-3 text-white shadow-xs">
+                <span className="text-[11px] text-emerald-100 block">Omset Hari Ini</span>
+                <div className="text-base sm:text-lg font-extrabold mt-1 text-white truncate">
                   Rp {todayGrossSales.toLocaleString('id-ID')}
                 </div>
-                <span className="text-[10px] opacity-80 mt-0.5 block truncate">
+                <span className="text-[10px] text-emerald-100/80 mt-0.5 block truncate">
                   {todayTransactions.length} Pesanan ({todayPortionsCount} Porsi)
                 </span>
               </div>
 
               <div className="bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-3 text-white shadow-xs">
-                <span className="text-[11px] opacity-90 block">Laba Bersih Hari Ini</span>
-                <div className="text-base sm:text-lg font-extrabold mt-1 truncate">
+                <span className="text-[11px] text-emerald-100 block">Laba Bersih Hari Ini</span>
+                <div className="text-base sm:text-lg font-extrabold mt-1 text-white truncate">
                   Rp {todayNetProfit.toLocaleString('id-ID')}
                 </div>
-                <span className="text-[10px] opacity-80 mt-0.5 block truncate">
+                <span className="text-[10px] text-emerald-200 font-bold mt-0.5 block truncate">
                   Margin: {todayGrossSales > 0 ? ((todayNetProfit / todayGrossSales) * 100).toFixed(1) : 0}%
                 </span>
               </div>
 
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-xs">
                 <span className="text-[11px] text-slate-500 block">Total Modal HPP</span>
-                <div className="text-base sm:text-lg font-extrabold text-slate-900 mt-1 truncate">
+                <div className="text-base sm:text-lg font-extrabold text-slate-800 mt-1 truncate">
                   Rp {todayTransactions.reduce((acc, t) => acc + t.totalFreshHpp + t.totalPackagingCost, 0).toLocaleString('id-ID')}
                 </div>
                 <span className="text-[10px] text-slate-400 mt-0.5 block truncate">Bahan Segar + Kemasan</span>
@@ -1501,7 +1569,7 @@ export default function App() {
             <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <div className={`p-2 rounded-xl shrink-0 ${lowStockItems.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  <div className={`p-2 rounded-xl shrink-0 ${lowStockItems.length > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-600'}`}>
                     <Package className="w-4 h-4" />
                   </div>
                   <div>
@@ -1517,14 +1585,14 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full border ${
                     lowStockItems.length > 0
-                      ? 'bg-amber-50 border-amber-300 text-amber-800'
-                      : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                      ? 'bg-amber-50 border-amber-200 text-amber-800'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   }`}>
                     {lowStockItems.length > 0 ? `⚠️ ${lowStockItems.length} Kemasan Perlu Restock` : '✅ Semua Kemasan Aman'}
                   </span>
                   <button
                     onClick={() => setActiveTab('packaging')}
-                    className="text-[10px] sm:text-xs font-bold text-orange-600 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                    className="text-[10px] sm:text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-700 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 shadow-xs"
                   >
                     <span>Kelola Stok</span>
                     <ChevronRight className="w-3 h-3" />
@@ -1549,7 +1617,7 @@ export default function App() {
                           className={`p-3 rounded-xl border transition-all ${
                             isCrit
                               ? 'bg-red-50/80 border-red-200'
-                              : 'bg-amber-50/70 border-amber-200'
+                              : 'bg-amber-50/60 border-amber-200'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-1 mb-1.5">
@@ -1563,7 +1631,7 @@ export default function App() {
                             </div>
                             <button
                               onClick={() => handleOpenRestock(item)}
-                              className="px-2 py-1 rounded-lg bg-white shadow-xs text-orange-600 hover:bg-orange-50 border border-orange-200 text-[10px] font-bold flex items-center gap-1 shrink-0"
+                              className="px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-700 shadow-xs text-[10px] font-bold flex items-center gap-1 shrink-0"
                             >
                               <Plus className="w-3 h-3" />
                               <span>Restock</span>
@@ -1573,7 +1641,7 @@ export default function App() {
                           <div className="space-y-1">
                             <div className="flex justify-between text-[10px] font-semibold">
                               <span className="text-slate-500">Sisa Fisik:</span>
-                              <span className={`font-black ${isCrit ? 'text-red-700' : 'text-amber-800'}`}>
+                              <span className={`font-black ${isCrit ? 'text-red-700' : 'text-slate-800'}`}>
                                 {stock} {item.unit} <span className="text-slate-400 font-normal">(Min: {min})</span>
                               </span>
                             </div>
@@ -1594,17 +1662,17 @@ export default function App() {
                 </div>
               ) : (
                 /* JIKA SEMUA STOK AMAN */
-                <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <div className="bg-emerald-50/60 border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
                   <div className="flex items-center gap-2.5">
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                     <div>
-                      <span className="font-extrabold text-emerald-950 block">Seluruh Stok Kemasan Operasional Aman</span>
-                      <span className="text-[10px] text-emerald-700">Thinwall, sendok garpu, cup sambal, dan label stiker dalam jumlah cukup.</span>
+                      <span className="font-extrabold text-emerald-600 block">Seluruh Stok Kemasan Operasional Aman</span>
+                      <span className="text-[10px] text-slate-600">Thinwall, sendok garpu, cup sambal, dan label stiker dalam jumlah cukup.</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {packagingList.map(item => (
-                      <span key={item.id} className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-slate-700">
+                      <span key={item.id} className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-emerald-600">
                         {item.name.split(' ')[0]}: {item.stock} {item.unit}
                       </span>
                     ))}
@@ -1618,7 +1686,7 @@ export default function App() {
                   <span>💡</span>
                   <span>Kapasitas porsi siap saji: <strong>Maks. {packagingList.find(p => p.category === 'container')?.stock || 0} porsi rujak</strong> (berdasarkan sisa Thinwall mangkok).</span>
                 </span>
-                <span className="text-orange-600 font-bold">Terpotong otomatis tiap transaksi</span>
+                <span className="text-emerald-600 font-bold">Terpotong otomatis tiap transaksi</span>
               </div>
             </div>
 
@@ -1645,7 +1713,7 @@ export default function App() {
               <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-bold text-slate-800">Transaksi Kasir Terbaru</h3>
-                  <button onClick={() => setActiveTab('report')} className="text-[11px] font-bold text-orange-600">
+                  <button onClick={() => setActiveTab('report')} className="text-[11px] font-bold text-slate-800 hover:underline">
                     Laporan Lengkap
                   </button>
                 </div>
@@ -1657,7 +1725,7 @@ export default function App() {
                         <div className="text-[10px] text-slate-400 truncate">{trx.receiptNumber} • {trx.channel}</div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className="font-extrabold text-slate-900">Rp {trx.finalGrossAmount.toLocaleString('id-ID')}</div>
+                        <div className="font-extrabold text-emerald-600">Rp {trx.finalGrossAmount.toLocaleString('id-ID')}</div>
                         <span className="text-[9px] text-slate-400">{trx.paymentMethod}</span>
                       </div>
                     </div>
@@ -1690,8 +1758,8 @@ export default function App() {
                       }}
                       className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                         landscapeLayoutMode === 'tab' && mobileLandscapeTab === 'menu'
-                          ? 'bg-orange-500 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'bg-slate-100 text-emerald-600 hover:bg-slate-100'
                       }`}
                     >
                       <span>🍍 Katalog Menu</span>
@@ -1706,18 +1774,14 @@ export default function App() {
                       }}
                       className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
                         landscapeLayoutMode === 'tab' && mobileLandscapeTab === 'cart'
-                          ? 'bg-orange-500 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          ? 'bg-emerald-500 text-white shadow-xs'
+                          : 'bg-slate-100 text-emerald-600 hover:bg-slate-100'
                       }`}
                     >
                       <ShoppingCart className="w-3.5 h-3.5" />
                       <span>Pesanan Aktif</span>
                       {cart.length > 0 && (
-                        <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
-                          landscapeLayoutMode === 'tab' && mobileLandscapeTab === 'cart'
-                            ? 'bg-white text-orange-600'
-                            : 'bg-orange-600 text-white'
-                        }`}>
+                        <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-100 text-amber-800">
                           {cart.length}
                         </span>
                       )}
@@ -1736,17 +1800,17 @@ export default function App() {
                         setLandscapeLayoutMode(prev => prev === 'tab' ? 'split' : 'tab');
                         audioPlayer.playBeep();
                       }}
-                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center gap-1"
+                      className="px-2 py-1 rounded-lg text-[10px] font-bold text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center gap-1"
                       title={landscapeLayoutMode === 'tab' ? 'Ubah ke Tampilan Split 2-Kolom' : 'Ubah ke Tampilan Tab Fokus'}
                     >
                       {landscapeLayoutMode === 'tab' ? (
                         <>
-                          <Columns2 className="w-3 h-3 text-orange-600" />
+                          <Columns2 className="w-3 h-3 text-emerald-600" />
                           <span className="hidden sm:inline">Split 2 Kolom</span>
                         </>
                       ) : (
                         <>
-                          <LayoutList className="w-3 h-3 text-orange-600" />
+                          <LayoutList className="w-3 h-3 text-emerald-600" />
                           <span className="hidden sm:inline">Tab Fokus</span>
                         </>
                       )}
@@ -1780,11 +1844,11 @@ export default function App() {
                                     className={`py-1 px-1.5 rounded-lg text-[10px] font-bold transition-all truncate text-center ${
                                       isSelected
                                         ? ch === 'Offline'
-                                          ? 'bg-slate-900 text-white shadow-xs'
+                                          ? 'bg-emerald-500 text-white shadow-xs'
                                           : ch === 'GoFood'
                                           ? 'bg-red-600 text-white shadow-xs'
                                           : ch === 'ShopeeFood'
-                                          ? 'bg-orange-600 text-white shadow-xs'
+                                          ? 'bg-emerald-700 text-white shadow-xs'
                                           : 'bg-emerald-600 text-white shadow-xs'
                                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
                                     }`}
@@ -1804,7 +1868,7 @@ export default function App() {
                               placeholder="Cari menu..."
                               value={menuSearchQuery}
                               onChange={(e) => setMenuSearchQuery(e.target.value)}
-                              className="w-full pl-6 pr-2 py-1 bg-slate-50 rounded-lg text-[10px] border border-slate-200 focus:outline-none focus:border-orange-500"
+                              className="w-full pl-6 pr-2 py-1 bg-slate-50 rounded-lg text-[10px] border border-slate-200 focus:outline-none focus:border-emerald-500"
                             />
                           </div>
                         </div>
@@ -1812,7 +1876,7 @@ export default function App() {
                         {/* 2. Baris Terpisah: Pilihan Level Pedas Rujak & Kategori */}
                         <div className="bg-white px-2 py-1.5 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 shrink-0">
                           <div className="flex items-center gap-1.5 overflow-x-auto min-w-0">
-                            <span className="text-[10px] font-bold text-slate-600 shrink-0 flex items-center gap-1">
+                            <span className="text-[10px] font-bold text-slate-800 shrink-0 flex items-center gap-1">
                               <span>🌶️</span>
                               <span>Level Pedas:</span>
                             </span>
@@ -1826,8 +1890,8 @@ export default function App() {
                                   }}
                                   className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap transition-colors ${
                                     selectedSpiciness === lvl
-                                      ? 'bg-orange-500 text-white shadow-xs'
-                                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                      ? 'bg-emerald-500 text-white shadow-xs'
+                                      : 'bg-emerald-50 text-emerald-600 hover:bg-slate-100'
                                   }`}
                                 >
                                   {lvl}
@@ -1847,8 +1911,8 @@ export default function App() {
                                 }}
                                 className={`px-2 py-0.5 rounded-md text-[9px] font-bold whitespace-nowrap transition-colors ${
                                   selectedCategoryFilter === cat
-                                    ? 'bg-slate-800 text-white shadow-xs'
-                                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                                    ? 'bg-emerald-500 text-white shadow-xs'
+                                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                                 }`}
                               >
                                 {cat}
@@ -1866,10 +1930,10 @@ export default function App() {
                                 <div
                                   key={item.id}
                                   onClick={() => addToCart(item)}
-                                  className="bg-white p-2.5 rounded-xl border border-slate-200 hover:border-orange-300 shadow-xs flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] transition-all"
+                                  className="bg-white p-2.5 rounded-xl border border-slate-200 hover:border-emerald-300 shadow-xs flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] transition-all"
                                 >
                                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <span className="text-2xl p-1 bg-orange-50 rounded-lg shrink-0">
+                                    <span className="text-2xl p-1 bg-emerald-50 border border-emerald-100 rounded-lg shrink-0">
                                       {item.image}
                                     </span>
                                     <div className="min-w-0 flex-1">
@@ -1879,7 +1943,7 @@ export default function App() {
                                       <p className="text-[9px] text-slate-400 truncate">
                                         {item.description}
                                       </p>
-                                      <span className="text-xs font-black text-orange-600 block mt-0.5">
+                                      <span className="text-xs font-black text-emerald-600 block mt-0.5">
                                         Rp {price.toLocaleString('id-ID')}
                                       </span>
                                     </div>
@@ -1890,7 +1954,7 @@ export default function App() {
                                       e.stopPropagation();
                                       addToCart(item);
                                     }}
-                                    className="px-2 py-1 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white flex items-center gap-1 font-bold text-[11px] transition-colors shrink-0"
+                                    className="px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-700 flex items-center gap-1 font-bold text-[11px] shadow-xs transition-colors shrink-0"
                                   >
                                     <Plus className="w-3.5 h-3.5" />
                                     <span>Tambah</span>
@@ -1903,16 +1967,16 @@ export default function App() {
 
                         {/* Floating Active Order Action Bar at Bottom (Padded so it never covers items) */}
                         {cart.length > 0 && (
-                          <div className="absolute bottom-1 left-2 right-2 bg-slate-900/95 text-white p-2 sm:p-2.5 rounded-2xl shadow-xl backdrop-blur-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                          <div className="absolute bottom-1 left-2 right-2 bg-slate-900/95 text-white p-2 sm:p-2.5 rounded-2xl shadow-xl border border-slate-700 backdrop-blur-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-2 duration-150">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-7 h-7 rounded-xl bg-orange-500 flex items-center justify-center font-bold text-xs shrink-0">
+                              <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-black text-xs shrink-0">
                                 {cart.length}
                               </div>
                               <div className="min-w-0">
-                                <span className="text-[10px] text-slate-300 block truncate">
+                                <span className="text-[10px] text-emerald-100 block truncate">
                                   {cartPortionCount} Porsi Terpilih
                                 </span>
-                                <span className="text-xs sm:text-sm font-black text-orange-400 block truncate">
+                                <span className="text-xs sm:text-sm font-black text-white block truncate">
                                   Rp {cartFinalGross.toLocaleString('id-ID')}
                                 </span>
                               </div>
@@ -1923,7 +1987,7 @@ export default function App() {
                                 setMobileLandscapeTab('cart');
                                 audioPlayer.playBeep();
                               }}
-                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs shrink-0"
+                              className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 shadow-xs shrink-0"
                             >
                               <span>Lihat Pesanan & Bayar</span>
                               <ArrowRight className="w-3.5 h-3.5" />
@@ -1959,11 +2023,11 @@ export default function App() {
                                 className={`flex-1 py-1 px-1 rounded-lg text-[9px] font-bold transition-all truncate ${
                                   isSelected
                                     ? ch === 'Offline'
-                                      ? 'bg-slate-900 text-white'
+                                      ? 'bg-emerald-500 text-white'
                                       : ch === 'GoFood'
                                       ? 'bg-red-600 text-white'
                                       : ch === 'ShopeeFood'
-                                      ? 'bg-orange-600 text-white'
+                                      ? 'bg-emerald-700 text-white'
                                       : 'bg-emerald-600 text-white'
                                     : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
                                 }`}
@@ -1982,14 +2046,14 @@ export default function App() {
                             placeholder="Cari..."
                             value={menuSearchQuery}
                             onChange={(e) => setMenuSearchQuery(e.target.value)}
-                            className="w-full pl-6 pr-2 py-1 bg-slate-50 rounded-lg text-[10px] border border-slate-200 focus:outline-none focus:border-orange-500"
+                            className="w-full pl-6 pr-2 py-1 bg-slate-50 rounded-lg text-[10px] border border-slate-200 focus:outline-none focus:border-emerald-500"
                           />
                         </div>
                       </div>
 
                       {/* Level Pedas */}
                       <div className="flex items-center justify-between gap-1 bg-white p-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0 text-[10px]">
-                        <span className="font-bold text-slate-500 shrink-0">🌶️ Pedas:</span>
+                        <span className="font-bold text-slate-700 shrink-0">🌶️ Pedas:</span>
                         <div className="flex items-center gap-1 overflow-x-auto">
                           {['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'].map(lvl => (
                             <button
@@ -1999,7 +2063,7 @@ export default function App() {
                                 audioPlayer.playBeep();
                               }}
                               className={`px-2 py-0.5 rounded-md font-bold whitespace-nowrap transition-colors ${
-                                selectedSpiciness === lvl ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'
+                                selectedSpiciness === lvl ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                               }`}
                             >
                               {lvl}
@@ -2016,24 +2080,24 @@ export default function App() {
                             <div
                               key={item.id}
                               onClick={() => addToCart(item)}
-                              className="bg-white p-2 rounded-xl border border-slate-200 hover:border-orange-300 shadow-xs flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] transition-all"
+                              className="bg-white p-2 rounded-xl border border-slate-200 hover:border-emerald-300 shadow-xs flex items-center justify-between gap-2 cursor-pointer active:scale-[0.99] transition-all"
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
-                                <span className="text-xl p-1 bg-orange-50 rounded-lg shrink-0">
+                                <span className="text-xl p-1 bg-emerald-50 border border-emerald-100 rounded-lg shrink-0">
                                   {item.image}
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <h4 className="text-xs font-bold text-slate-900 truncate">
                                     {item.name}
                                   </h4>
-                                  <span className="text-xs font-black text-orange-600 block">
+                                  <span className="text-xs font-black text-emerald-600 block">
                                     Rp {price.toLocaleString('id-ID')}
                                   </span>
                                 </div>
                               </div>
 
                               <button
-                                className="px-2 py-1 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white flex items-center gap-1 font-bold text-[10px] transition-colors shrink-0"
+                                className="px-2 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-700 flex items-center gap-1 font-bold text-[10px] shadow-xs transition-colors shrink-0"
                               >
                                 <Plus className="w-3 h-3" />
                                 <span>Tambah</span>
@@ -2073,11 +2137,11 @@ export default function App() {
                           className={`py-2 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center ${
                             isSelected
                               ? ch === 'Offline'
-                                ? 'bg-slate-900 text-white shadow-xs'
+                                ? 'bg-emerald-500 text-white shadow-xs'
                                 : ch === 'GoFood'
                                 ? 'bg-red-600 text-white shadow-xs'
                                 : ch === 'ShopeeFood'
-                                ? 'bg-orange-600 text-white shadow-xs'
+                                ? 'bg-emerald-700 text-white shadow-xs'
                                 : 'bg-emerald-600 text-white shadow-xs'
                               : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/70'
                           }`}
@@ -2091,7 +2155,7 @@ export default function App() {
 
                 {/* Level Pedas */}
                 <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 overflow-x-auto">
-                  <span className="text-[11px] font-bold text-slate-600 shrink-0">🌶️ Level Pedas:</span>
+                  <span className="text-[11px] font-bold text-slate-800 shrink-0">🌶️ Level Pedas:</span>
                   <div className="flex items-center gap-1">
                     {['Tidak Pedas', 'Sedang', 'Pedas', 'Extra Pedas'].map(lvl => (
                       <button
@@ -2101,7 +2165,7 @@ export default function App() {
                           audioPlayer.playBeep();
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-colors ${
-                          selectedSpiciness === lvl ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'
+                          selectedSpiciness === lvl ? 'bg-emerald-500 text-white shadow-xs' : 'bg-emerald-50 text-emerald-600 hover:bg-slate-100'
                         }`}
                       >
                         {lvl}
@@ -2124,21 +2188,21 @@ export default function App() {
                         <div
                           key={item.id}
                           onClick={() => addToCart(item)}
-                          className="bg-white p-3 rounded-2xl border border-slate-200 hover:border-orange-300 shadow-xs cursor-pointer flex items-center justify-between gap-2 active:scale-[0.98]"
+                          className="bg-white p-3 rounded-2xl border border-slate-200 hover:border-emerald-300 shadow-xs cursor-pointer flex items-center justify-between gap-2 active:scale-[0.98]"
                         >
                           <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                            <span className="text-2xl p-1 bg-orange-50 rounded-xl shrink-0">
+                            <span className="text-2xl p-1 bg-emerald-50 border border-slate-200 rounded-xl shrink-0">
                               {item.image}
                             </span>
                             <div className="min-w-0 flex-1">
                               <h4 className="text-xs font-bold text-slate-900 truncate">{item.name}</h4>
                               <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{item.description}</p>
-                              <span className="text-xs font-extrabold text-orange-600 mt-1 block">
+                              <span className="text-xs font-extrabold text-emerald-600 mt-1 block">
                                 Rp {price.toLocaleString('id-ID')}
                               </span>
                             </div>
                           </div>
-                          <button className="w-7 h-7 rounded-xl bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white flex items-center justify-center font-bold text-sm shrink-0">
+                          <button className="w-7 h-7 rounded-xl bg-emerald-500 text-white hover:bg-emerald-700 flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
                             <Plus className="w-4 h-4" />
                           </button>
                         </div>
@@ -2162,7 +2226,7 @@ export default function App() {
                 <h2 className="text-xs sm:text-sm font-extrabold tracking-tight">Riwayat Struk Penjualan</h2>
                 <p className="text-[10px] opacity-80">Cari nota transaksi kasir & cetak ulang struk thermal Bluetooth / PDF.</p>
               </div>
-              <Receipt className="w-5 h-5 text-orange-400" />
+              <Receipt className="w-5 h-5 text-white" />
             </div>
 
             <div className="relative">
@@ -2172,7 +2236,7 @@ export default function App() {
                 placeholder="Cari nomor struk atau nama pelanggan..."
                 value={receiptSearchQuery}
                 onChange={(e) => setReceiptSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-orange-500"
+                className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
 
@@ -2181,12 +2245,12 @@ export default function App() {
                 <div key={trx.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between gap-2 text-xs">
                   <div>
                     <div className="flex items-center justify-between">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700">{trx.channel}</span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-600">{trx.channel}</span>
                       <span className="text-[10px] text-slate-400">{trx.timestamp}</span>
                     </div>
                     <div className="font-bold text-slate-900 mt-1.5 truncate">{trx.customerName || 'Pelanggan'}</div>
                     <div className="text-[10px] text-slate-400 truncate">{trx.receiptNumber} • {trx.paymentMethod}</div>
-                    <div className="mt-1 text-xs font-black text-orange-600">Rp {trx.finalGrossAmount.toLocaleString('id-ID')}</div>
+                    <div className="mt-1 text-xs font-black text-emerald-600">Rp {trx.finalGrossAmount.toLocaleString('id-ID')}</div>
                   </div>
                   <button
                     onClick={() => {
@@ -2194,9 +2258,9 @@ export default function App() {
                       setShowReceiptModal(true);
                       audioPlayer.playBeep();
                     }}
-                    className="w-full py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                    className="w-full py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors"
                   >
-                    <Printer className="w-3.5 h-3.5 text-orange-400" />
+                    <Printer className="w-3.5 h-3.5 text-white" />
                     <span>Cetak Struk</span>
                   </button>
                 </div>
@@ -2209,17 +2273,17 @@ export default function App() {
         {role === 'owner' && activeTab === 'menu' && (
           <div className="space-y-3.5 max-w-6xl mx-auto overflow-y-auto max-h-[calc(100dvh-4rem)] pr-1">
             {/* Header Banner */}
-            <div className="bg-gradient-to-br from-orange-600 to-amber-600 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xs sm:text-sm font-extrabold tracking-tight">Kelola Daftar Menu Jualan</h2>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/20 font-bold">Akses Owner</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-black">Akses Owner</span>
                 </div>
-                <p className="text-[10px] opacity-90 mt-0.5">
+                <p className="text-[10px] text-emerald-100 mt-0.5">
                   Tambah menu baru, perbarui harga jual offline & online, atau hapus menu. Data langsung sinkron ke Kasir POS.
                 </p>
               </div>
-              <div className="p-2 rounded-xl bg-white/10 shrink-0">
+              <div className="p-2 rounded-xl bg-white/10 shrink-0 text-white">
                 <UtensilsCrossed className="w-5 h-5 text-white" />
               </div>
             </div>
@@ -2228,7 +2292,7 @@ export default function App() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-slate-900">Total Menu:</span>
-                <span className="px-2 py-0.5 rounded-md bg-orange-100 text-orange-800 font-extrabold text-xs">
+                <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-black text-xs">
                   {menuList.length} Item
                 </span>
                 <span className="text-[10px] text-slate-400">|</span>
@@ -2248,15 +2312,15 @@ export default function App() {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={handleResetMenuDefault}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-200"
                   title="Kembalikan menu ke standar bawaan"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-700" />
                   <span className="hidden sm:inline">Reset Standar</span>
                 </button>
                 <button
                   onClick={handleOpenAddMenu}
-                  className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition-colors"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white text-xs font-black flex items-center gap-1.5 shadow-xs transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Tambah Menu</span>
@@ -2276,7 +2340,7 @@ export default function App() {
                     }}
                     className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                       selectedCategoryFilter === cat
-                        ? 'bg-orange-600 text-white shadow-xs'
+                        ? 'bg-emerald-500 text-white shadow-xs'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -2292,7 +2356,7 @@ export default function App() {
                   placeholder="Cari nama menu atau bahan..."
                   value={menuSearchQuery}
                   onChange={(e) => setMenuSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-orange-500 shadow-xs"
+                  className="w-full pl-8 pr-3 py-1.5 bg-white rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-emerald-500 shadow-xs"
                 />
               </div>
             </div>
@@ -2300,7 +2364,7 @@ export default function App() {
             {/* Grid List Menu Cards */}
             {filteredMenuItems.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center mx-auto text-2xl">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto text-2xl border border-emerald-200">
                   🍍
                 </div>
                 <div>
@@ -2311,7 +2375,7 @@ export default function App() {
                 </div>
                 <button
                   onClick={handleOpenAddMenu}
-                  className="px-3.5 py-1.5 rounded-xl bg-orange-600 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs"
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-500 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Tambah Menu Sekarang</span>
@@ -2324,12 +2388,12 @@ export default function App() {
                   return (
                     <div
                       key={item.id}
-                      className="bg-white p-3.5 rounded-2xl border border-slate-200 hover:border-orange-200 shadow-xs flex flex-col justify-between gap-2.5 transition-all"
+                      className="bg-white p-3.5 rounded-2xl border border-slate-200 hover:border-emerald-300 shadow-xs flex flex-col justify-between gap-2.5 transition-all"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="text-2xl p-2 bg-orange-50 rounded-xl shrink-0 border border-orange-100">
+                            <span className="text-2xl p-2 bg-emerald-50 rounded-xl shrink-0 border border-emerald-100">
                               {item.image || '🍍'}
                             </span>
                             <div className="min-w-0 flex-1">
@@ -2338,10 +2402,10 @@ export default function App() {
                               </h4>
                               <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full inline-block mt-0.5 ${
                                 item.category === 'Rujak'
-                                  ? 'bg-orange-100 text-orange-800'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   : item.category === 'Extra'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-emerald-100 text-emerald-800'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-600 border border-slate-200'
                               }`}>
                                 {item.category}
                               </span>
@@ -2363,8 +2427,8 @@ export default function App() {
                             </span>
                           </div>
                           <div className="text-right">
-                            <span className="text-[9px] text-orange-500 block font-medium">Online Food (20%):</span>
-                            <span className="font-extrabold text-orange-600">
+                            <span className="text-[9px] text-slate-400 block font-medium">Online Food (20%):</span>
+                            <span className="font-extrabold text-emerald-600">
                               Rp {onlinePrice.toLocaleString('id-ID')}
                             </span>
                           </div>
@@ -2374,9 +2438,9 @@ export default function App() {
                         <div className="flex items-center gap-1.5 pt-1">
                           <button
                             onClick={() => handleOpenEditMenu(item)}
-                            className="flex-1 py-1.5 px-2 rounded-xl bg-slate-50 hover:bg-orange-50 text-slate-700 hover:text-orange-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                            className="flex-1 py-1.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-emerald-600 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                           >
-                            <Edit3 className="w-3.5 h-3.5 text-orange-600 shrink-0" />
+                            <Edit3 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                             <span>Edit Menu</span>
                           </button>
                           <button
@@ -2399,101 +2463,163 @@ export default function App() {
         {/* ================= TAB: MANAJEMEN STOK KEMASAN ================= */}
         {activeTab === 'packaging' && (
           <div className="space-y-3 max-w-6xl mx-auto overflow-y-auto max-h-[calc(100dvh-4rem)] pr-1">
-            <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-3 rounded-2xl text-white shadow-xs flex items-center justify-between">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-3 sm:p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between gap-2">
               <div>
                 <h2 className="text-xs sm:text-sm font-extrabold tracking-tight">Ketersediaan Stok Kemasan & Packaging</h2>
-                <p className="text-[10px] opacity-90">Terpotong otomatis setiap transaksi kasir tersimpan.</p>
+                <p className="text-[10px] text-emerald-100">Terpotong otomatis setiap transaksi kasir tersimpan.</p>
               </div>
-              <Package className="w-5 h-5 text-white" />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleOpenAddPackaging}
+                  className="px-2.5 py-1.5 rounded-xl bg-white text-emerald-600 hover:bg-emerald-50 font-black text-xs flex items-center gap-1.5 shadow-xs transition-all active:scale-95"
+                  title="Tambah jenis kemasan baru"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Tambah Kemasan</span>
+                </button>
+                <Package className="w-5 h-5 text-white hidden sm:block" />
+              </div>
             </div>
 
             {role === 'owner' && (
-              <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between text-xs">
+              <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-2 text-xs">
                 <div>
                   <span className="text-[10px] text-slate-500 font-semibold block">Total Biaya Kemasan / Porsi</span>
                   <span className="text-sm font-black text-slate-900">Rp {(standardPackagingCost || 0).toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
-                    onClick={handleResetPackagingDefault}
-                    className="text-[10px] px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold flex items-center gap-1 transition-colors"
-                    title="Reset stok dan biaya ke pengaturan awal"
+                    onClick={handleOpenAddPackaging}
+                    className="text-[11px] px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-colors"
                   >
-                    <RotateCcw className="w-3 h-3 text-slate-500" />
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Kemasan</span>
+                  </button>
+                  <button
+                    onClick={handleResetPackagingDefault}
+                    className="text-[10px] px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center gap-1 transition-colors border border-slate-200"
+                    title="Reset stok dan biaya ke pengaturan awal bawaan"
+                  >
+                    <RotateCcw className="w-3 h-3 text-slate-700" />
                     <span>Reset Standar</span>
                   </button>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">Akses Owner</span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-black">Akses Owner</span>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {packagingList.map(item => {
-                const currentStock = typeof item.stock === 'number' && !isNaN(item.stock) ? item.stock : 0;
-                const minStock = typeof item.minStock === 'number' && !isNaN(item.minStock) ? item.minStock : 10;
-                const unitCost = typeof item.unitCost === 'number' && !isNaN(item.unitCost) ? item.unitCost : 0;
-                const isLow = currentStock <= minStock;
-                const isCritical = currentStock <= 10;
-                const safeDivisor = Math.max(1, minStock * 2.5);
-                const percent = Math.min(100, Math.max(0, (currentStock / safeDivisor) * 100));
+              {packagingList.length === 0 ? (
+                <div className="col-span-full bg-white p-8 rounded-2xl border border-dashed border-slate-300 text-center space-y-3">
+                  <Package className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs text-slate-500 font-medium">Belum ada item kemasan terdaftar.</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      onClick={handleOpenAddPackaging}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" /> Tambah Kemasan Baru
+                    </button>
+                    <button
+                      onClick={handleResetPackagingDefault}
+                      className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 border border-slate-200"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Reset Standar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                packagingList.map(item => {
+                  const currentStock = typeof item.stock === 'number' && !isNaN(item.stock) ? item.stock : 0;
+                  const minStock = typeof item.minStock === 'number' && !isNaN(item.minStock) ? item.minStock : 10;
+                  const unitCost = typeof item.unitCost === 'number' && !isNaN(item.unitCost) ? item.unitCost : 0;
+                  const isLow = currentStock <= minStock;
+                  const isCritical = currentStock <= 10;
+                  const safeDivisor = Math.max(1, minStock * 2.5);
+                  const percent = Math.min(100, Math.max(0, (currentStock / safeDivisor) * 100));
 
-                return (
-                  <div key={item.id} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-2">
-                    <div className="flex items-start justify-between gap-1">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="text-xs font-bold text-slate-900 truncate">{item.name}</h4>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full shrink-0 ${
-                            isCritical ? 'bg-red-100 text-red-700 animate-pulse' : isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                          }`}>
-                            {isCritical ? 'Kritis' : isLow ? 'Menipis' : 'Aman'}
+                  const categoryBadge = {
+                    container: { label: 'Wadah', bg: 'bg-blue-50 text-blue-700 border-blue-200' },
+                    cutlery: { label: 'Alat Makan', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
+                    condiment: { label: 'Cup Sambal', bg: 'bg-red-50 text-red-700 border-red-200' },
+                    label: { label: 'Label/Stiker', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
+                  }[item.category] || { label: 'Kemasan', bg: 'bg-slate-100 text-slate-700 border-slate-200' };
+
+                  return (
+                    <div key={item.id} className="bg-white p-3 rounded-2xl border border-slate-200 hover:border-emerald-300 shadow-xs space-y-2.5 transition-all">
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="text-xs font-bold text-slate-900 truncate">{item.name}</h4>
+                            <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-md border ${categoryBadge.bg}`}>
+                              {categoryBadge.label}
+                            </span>
+                            <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full shrink-0 ${
+                              isCritical ? 'bg-red-100 text-red-700 animate-pulse' : isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-50 text-emerald-600 border border-slate-200'
+                            }`}>
+                              {isCritical ? 'Kritis' : isLow ? 'Menipis' : 'Aman'}
+                            </span>
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-0.5 truncate">Min operasional: {minStock} {item.unit}</p>
+                        </div>
+                        <button
+                          onClick={() => handleOpenRestock(item)}
+                          className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-amber-100 text-amber-800 text-xs font-bold border border-slate-200 flex items-center gap-1 shrink-0 transition-colors"
+                          title={`Tambah stok ${item.name}`}
+                        >
+                          <Plus className="w-3 h-3" /> Restock
+                        </button>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between text-[10px] mb-0.5 font-semibold">
+                          <span className="text-slate-500">Sisa Fisik:</span>
+                          <span className={`font-black ${isCritical ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-slate-900'}`}>
+                            {currentStock} {item.unit}
                           </span>
                         </div>
-                        <p className="text-[9px] text-slate-400 mt-0.5 truncate">Min operasional: {minStock} {item.unit}</p>
-                      </div>
-                      <button
-                        onClick={() => handleOpenRestock(item)}
-                        className="px-2 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold border border-orange-200 flex items-center gap-1 shrink-0"
-                      >
-                        <Plus className="w-3 h-3" /> Tambah
-                      </button>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-[10px] mb-0.5 font-semibold">
-                        <span className="text-slate-500">Sisa Fisik:</span>
-                        <span className={`font-black ${isCritical ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-slate-900'}`}>
-                          {currentStock} {item.unit}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            isCritical ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'
-                          }`}
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {role === 'owner' && (
-                      <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px]">
-                        <span className="text-slate-400">Harga Beli / unit:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-700">Rp {unitCost.toLocaleString('id-ID')}</span>
-                          <button
-                            onClick={() => handleOpenEditCost(item)}
-                            className="p-1 hover:bg-orange-50 text-orange-600 rounded-md transition-colors"
-                            title="Ubah harga modal kemasan"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                          </button>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isCritical ? 'bg-red-500' : isLow ? 'bg-amber-500' : 'bg-emerald-500'
+                            }`}
+                            style={{ width: `${percent}%` }}
+                          />
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                        <div>
+                          {role === 'owner' ? (
+                            <span className="font-extrabold text-slate-800">Rp {unitCost.toLocaleString('id-ID')} <span className="text-[9px] font-normal text-slate-400">/{item.unit}</span></span>
+                          ) : (
+                            <span className="text-slate-500 font-medium">{item.unit}</span>
+                          )}
+                        </div>
+                        {role === 'owner' && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleOpenEditPackaging(item)}
+                              className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-emerald-600 border border-slate-200 rounded-lg font-bold text-[10px] flex items-center gap-1 transition-colors"
+                              title="Ubah nama, kategori, unit & biaya"
+                            >
+                              <Edit3 className="w-3 h-3 text-slate-600" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeletePackaging(item)}
+                              className="p-1 hover:bg-red-50 text-red-500 hover:text-red-700 border border-transparent hover:border-red-200 rounded-lg transition-colors"
+                              title={`Hapus ${item.name}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -2501,12 +2627,12 @@ export default function App() {
         {/* ================= TAB: KALKULATOR HPP & MARGIN (OWNER ONLY) ================= */}
         {role === 'owner' && activeTab === 'margin' && (
           <div className="space-y-4 max-w-5xl mx-auto overflow-y-auto max-h-[calc(100dvh-4rem)] pr-1">
-            <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-extrabold tracking-tight">Kalkulator Margin & Simulasi HPP Multi-Channel</h2>
-                <p className="text-[10px] opacity-80">Hitung otomatis laba bersih setelah potongan komisi GoFood, Shopee, Grab (20%).</p>
+                <p className="text-[10px] text-emerald-100">Hitung otomatis laba bersih setelah potongan komisi GoFood, Shopee, Grab (20%).</p>
               </div>
-              <Calculator className="w-6 h-6 text-orange-400" />
+              <Calculator className="w-6 h-6 text-white" />
             </div>
 
             {/* Input Parameter Dasar */}
@@ -2519,7 +2645,7 @@ export default function App() {
                     type="number"
                     value={baseFreshHpp}
                     onChange={(e) => setBaseFreshHpp(Math.max(0, Number(e.target.value)))}
-                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold focus:outline-none focus:border-orange-500"
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <p className="text-[9px] text-slate-400">Rata-rata buah mangga, nanas, jambu, gula aren, kacang, cabai per porsi.</p>
@@ -2527,7 +2653,7 @@ export default function App() {
 
               <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-2">
                 <span className="text-[11px] font-bold text-slate-700 block">2. Total Biaya Kemasan:</span>
-                <div className="p-2 rounded-xl bg-orange-50 border border-orange-200 text-xs font-extrabold text-orange-900">
+                <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-100 text-xs font-extrabold text-emerald-700">
                   Rp {standardPackagingCost.toLocaleString('id-ID')} / porsi
                 </div>
                 <p className="text-[9px] text-slate-400">Thinwall + Sendok Garpu + Cup Sambal + Stiker Kemasan.</p>
@@ -2535,7 +2661,7 @@ export default function App() {
 
               <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs space-y-2">
                 <span className="text-[11px] font-bold text-slate-700 block">3. Total HPP Pokok Produksi:</span>
-                <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-black text-emerald-800">
+                <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-black text-emerald-700">
                   Rp {(baseFreshHpp + standardPackagingCost).toLocaleString('id-ID')} / porsi
                 </div>
                 <p className="text-[9px] text-slate-400">Bahan segar (Rp {baseFreshHpp.toLocaleString()}) + Kemasan (Rp {standardPackagingCost.toLocaleString()}).</p>
@@ -2584,12 +2710,12 @@ export default function App() {
                           <span>Rp {totalHpp.toLocaleString('id-ID')}</span>
                         </div>
                         <div className="flex justify-between pt-1 border-t border-slate-200 text-xs font-black">
-                          <span className="text-emerald-800">Laba Bersih:</span>
-                          <span className="text-emerald-700">Rp {profit.toLocaleString('id-ID')}</span>
+                          <span className="text-emerald-600">Laba Bersih:</span>
+                          <span className="text-emerald-600">Rp {profit.toLocaleString('id-ID')}</span>
                         </div>
                         <div className="flex justify-between text-[10px]">
                           <span className="text-slate-400">Margin Profit:</span>
-                          <span className="font-bold text-orange-600">{marginPct}%</span>
+                          <span className="font-bold text-slate-800">{marginPct}%</span>
                         </div>
                       </div>
                     </div>
@@ -2603,10 +2729,10 @@ export default function App() {
         {/* ================= TAB: LAPORAN KEUANGAN (OWNER ONLY) ================= */}
         {role === 'owner' && activeTab === 'report' && (
           <div className="space-y-4 max-w-6xl mx-auto overflow-y-auto max-h-[calc(100dvh-4rem)] pr-1">
-            <div className="bg-gradient-to-br from-emerald-800 to-teal-900 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-3.5 rounded-2xl text-white shadow-xs flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-extrabold tracking-tight">Laporan Rekapitulasi Laba Rugi Toko</h2>
-                <p className="text-[10px] opacity-80">Ringkasan akuntansi omset kotor, potongan komisi, modal bahan & kemasan, serta laba bersih riil.</p>
+                <p className="text-[10px] text-emerald-100">Ringkasan akuntansi omset kotor, potongan komisi, modal bahan & kemasan, serta laba bersih riil.</p>
               </div>
               <BarChart3 className="w-6 h-6 text-white" />
             </div>
@@ -2631,18 +2757,18 @@ export default function App() {
 
               <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
                 <span className="text-[10px] text-slate-400 font-semibold block">Total Biaya Kemasan</span>
-                <span className="text-sm sm:text-base font-black text-amber-700 block mt-0.5 truncate">
+                <span className="text-sm sm:text-base font-black text-slate-900 block mt-0.5 truncate">
                   Rp {reportSummary.packagingCostTotal.toLocaleString('id-ID')}
                 </span>
                 <span className="text-[9px] text-slate-500">Thinwall + Cup + Sendok</span>
               </div>
 
               <div className="bg-gradient-to-br from-emerald-600 to-teal-600 p-3 rounded-2xl text-white shadow-xs">
-                <span className="text-[10px] opacity-80 font-semibold block">Total Laba Bersih</span>
-                <span className="text-sm sm:text-base font-black block mt-0.5 truncate">
+                <span className="text-[10px] text-emerald-100 font-semibold block">Total Laba Bersih</span>
+                <span className="text-sm sm:text-base font-black text-white block mt-0.5 truncate">
                   Rp {reportSummary.netProfitTotal.toLocaleString('id-ID')}
                 </span>
-                <span className="text-[9px] opacity-80">
+                <span className="text-[9px] text-emerald-100/80">
                   Margin: {reportSummary.grossTotal > 0 ? ((reportSummary.netProfitTotal / reportSummary.grossTotal) * 100).toFixed(1) : 0}%
                 </span>
               </div>
@@ -2694,13 +2820,13 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('pos'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'pos' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'pos' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <div className="relative">
                     <ShoppingCart className="w-5 h-5" />
                     {cart.length > 0 && (
-                      <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-orange-600 text-white rounded-full text-[9px] flex items-center justify-center font-black shadow-xs">
+                      <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-amber-100 text-amber-800 rounded-full text-[9px] flex items-center justify-center font-black shadow-xs">
                         {cart.length}
                       </span>
                     )}
@@ -2711,7 +2837,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('receipts'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'receipts' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'receipts' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <History className="w-5 h-5" />
@@ -2721,7 +2847,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('packaging'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'packaging' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'packaging' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <div className="relative">
@@ -2738,7 +2864,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('dashboard'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'dashboard' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'dashboard' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <Store className="w-5 h-5" />
@@ -2748,13 +2874,13 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('pos'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'pos' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'pos' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <div className="relative">
                     <ShoppingCart className="w-5 h-5" />
                     {cart.length > 0 && (
-                      <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-orange-600 text-white rounded-full text-[9px] flex items-center justify-center font-black shadow-xs">
+                      <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-amber-100 text-amber-800 rounded-full text-[9px] flex items-center justify-center font-black shadow-xs">
                         {cart.length}
                       </span>
                     )}
@@ -2765,7 +2891,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('menu'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'menu' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'menu' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <UtensilsCrossed className="w-5 h-5" />
@@ -2775,7 +2901,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('packaging'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'packaging' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'packaging' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <div className="relative">
@@ -2790,7 +2916,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('margin'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'margin' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'margin' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <Calculator className="w-5 h-5" />
@@ -2800,7 +2926,7 @@ export default function App() {
                 <button
                   onClick={() => { setActiveTab('report'); audioPlayer.playBeep(); }}
                   className={`flex flex-col items-center justify-center gap-1 transition-colors ${
-                    activeTab === 'report' ? 'text-orange-600' : 'hover:text-slate-600'
+                    activeTab === 'report' ? 'text-emerald-600' : 'hover:text-slate-600'
                   }`}
                 >
                   <BarChart3 className="w-5 h-5" />
@@ -2819,7 +2945,7 @@ export default function App() {
           <div className="bg-white w-full max-w-xs rounded-3xl p-4 shadow-2xl space-y-3 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
-                <Package className="w-4 h-4 text-orange-600" />
+                <Package className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-xs sm:text-sm font-extrabold text-slate-900">Restock {selectedPkgForRestock.name}</h3>
               </div>
               <button onClick={() => setSelectedPkgForRestock(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
@@ -2830,7 +2956,7 @@ export default function App() {
             <div className="space-y-2 text-xs">
               <div className="flex justify-between text-slate-500">
                 <span>Stok saat ini:</span>
-                <span className="font-bold text-slate-900">{selectedPkgForRestock.stock} {selectedPkgForRestock.unit}</span>
+                <span className="font-bold text-slate-800">{selectedPkgForRestock.stock} {selectedPkgForRestock.unit}</span>
               </div>
 
               <div>
@@ -2841,7 +2967,7 @@ export default function App() {
                     min={1}
                     value={restockAmount}
                     onChange={(e) => setRestockAmount(Math.max(1, Number(e.target.value)))}
-                    className="flex-1 p-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-orange-500"
+                    className="flex-1 p-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-emerald-500"
                   />
                   <span className="text-xs font-bold text-slate-400">{selectedPkgForRestock.unit}</span>
                 </div>
@@ -2852,7 +2978,7 @@ export default function App() {
                   <button
                     key={qty}
                     onClick={() => setRestockAmount(qty)}
-                    className="py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-700"
+                    className="py-1 rounded-lg bg-emerald-50 hover:bg-slate-100 text-[10px] font-bold text-slate-800 border border-slate-200"
                   >
                     +{qty}
                   </button>
@@ -2869,7 +2995,7 @@ export default function App() {
               </button>
               <button
                 onClick={handleSaveRestock}
-                className="flex-1 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-xs font-bold text-white shadow-xs"
+                className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-xs font-bold text-white shadow-xs"
               >
                 Simpan Stok
               </button>
@@ -2878,65 +3004,275 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= MODAL: EDIT BIAYA & BATAS KEMASAN (OWNER ONLY) ================= */}
+      {/* ================= MODAL: EDIT DATA & BIAYA KEMASAN (OWNER ONLY) ================= */}
       {selectedPkgForEdit && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3">
-          <div className="bg-white w-full max-w-xs rounded-3xl p-4 shadow-2xl space-y-3 animate-in zoom-in-95 duration-150">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-4 shadow-2xl space-y-3 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-orange-600" />
-                <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">Atur Biaya {selectedPkgForEdit.name}</h3>
+                <Edit3 className="w-4 h-4 text-emerald-600" />
+                <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 truncate">Edit Kemasan: {selectedPkgForEdit.name}</h3>
               </div>
               <button onClick={() => setSelectedPkgForEdit(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-2 text-xs">
+            <form onSubmit={handleSaveEditPackaging} className="space-y-2.5 text-xs">
               <div>
-                <label className="text-[10px] font-bold text-slate-600 block mb-1">Harga Beli / Unit (Rp):</label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-400">Rp</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={editUnitCost}
-                    onChange={(e) => setEditUnitCost(Math.max(0, Number(e.target.value)))}
-                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-xs focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-                <p className="text-[9px] text-slate-400 mt-0.5">Biaya modal ini akan otomatis masuk ke perhitungan HPP margin rujak.</p>
+                <label className="text-[10px] font-bold text-slate-600 block mb-1">Nama Kemasan:</label>
+                <input
+                  type="text"
+                  required
+                  value={editPkgName}
+                  onChange={(e) => setEditPkgName(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
+                />
               </div>
 
               <div>
-                <label className="text-[10px] font-bold text-slate-600 block mb-1">Batas Minimum Peringatan Stok:</label>
-                <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-bold text-slate-600 block mb-1">Kategori Kemasan:</label>
+                <select
+                  value={editPkgCategory}
+                  onChange={(e) => setEditPkgCategory(e.target.value as any)}
+                  className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="container">Wadah Utama (Mangkok Thinwall)</option>
+                  <option value="cutlery">Alat Makan (Sendok / Garpu)</option>
+                  <option value="condiment">Cup Sambal / Bumbu</option>
+                  <option value="label">Label / Stiker Segel</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">Satuan Hitung:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editPkgUnit}
+                    onChange={(e) => setEditPkgUnit(e.target.value)}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-600 block mb-1">Batas Min Stok:</label>
                   <input
                     type="number"
                     min={1}
                     value={editMinStock}
                     onChange={(e) => setEditMinStock(Math.max(1, Number(e.target.value)))}
-                    className="flex-1 p-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-orange-500"
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
                   />
-                  <span className="text-xs font-bold text-slate-400">{selectedPkgForEdit.unit}</span>
                 </div>
               </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-600 block mb-1">Harga Beli / Unit Modal (Rp):</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-1.5 text-xs font-bold text-slate-400">Rp</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editUnitCost}
+                    onChange={(e) => setEditUnitCost(Math.max(0, Number(e.target.value)))}
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-extrabold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 mt-0.5">Otomatis masuk ke kalkulasi HPP kemasan per porsi.</p>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
+                {role === 'owner' && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePackaging(selectedPkgForEdit)}
+                    className="py-2 px-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold flex items-center gap-1 transition-colors"
+                    title="Hapus kemasan ini"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus</span>
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5 flex-1 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPkgForEdit(null)}
+                    className="py-2 px-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="py-2 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-xs font-bold text-white shadow-xs"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: TAMBAH KEMASAN BARU ================= */}
+      {showAddPkgModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white w-full max-w-sm rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 max-h-[94dvh] overflow-y-auto animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-xl bg-emerald-50 text-emerald-600">
+                  <Package className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Tambah Kemasan Baru</h3>
+                  <p className="text-[10px] text-slate-400">Tambahkan jenis kemasan atau wadah baru ke stok</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddPkgModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={() => setSelectedPkgForEdit(null)}
-                className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleSaveEditCost}
-                className="flex-1 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-xs font-bold text-white shadow-xs"
-              >
-                Simpan
-              </button>
-            </div>
+            <form onSubmit={handleSaveNewPackaging} className="space-y-3">
+              {/* Nama Kemasan */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  Nama Kemasan <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Misal: Paper Bag Mba Uus / Plastik Klip"
+                  value={pkgFormName}
+                  onChange={(e) => setPkgFormName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-500 focus:bg-white"
+                />
+              </div>
+
+              {/* Kategori Kemasan */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">Kategori Kemasan</label>
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  {[
+                    { id: 'container', label: 'Wadah Utama (Mangkok)' },
+                    { id: 'cutlery', label: 'Alat Makan (Sendok)' },
+                    { id: 'condiment', label: 'Cup Sambal / Bumbu' },
+                    { id: 'label', label: 'Label / Stiker Segel' },
+                  ].map(cat => (
+                    <button
+                      type="button"
+                      key={cat.id}
+                      onClick={() => setPkgFormCategory(cat.id as any)}
+                      className={`p-2 rounded-xl text-[10px] font-bold text-left border transition-all ${
+                        pkgFormCategory === cat.id
+                          ? 'bg-emerald-500 text-white border-emerald-500 shadow-xs'
+                          : 'bg-emerald-50/40 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Satuan Kemasan */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">Satuan Hitung (Unit)</label>
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  {['pcs', 'set', 'cup', 'lembar', 'roll', 'pack'].map(u => (
+                    <button
+                      type="button"
+                      key={u}
+                      onClick={() => setPkgFormUnit(u)}
+                      className={`px-2 py-0.8 rounded-lg text-[10px] font-bold transition-all ${
+                        pkgFormUnit === u
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ketik satuan kustom (misal: pcs)"
+                  value={pkgFormUnit}
+                  onChange={(e) => setPkgFormUnit(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-500 focus:bg-white"
+                />
+              </div>
+
+              {/* Stok Awal & Batas Minimum */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Stok Awal Fisik</label>
+                  <input
+                    type="number"
+                    min={0}
+                    required
+                    value={pkgFormStock}
+                    onChange={(e) => setPkgFormStock(Math.max(0, Number(e.target.value)))}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">Batas Min Peringatan</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={pkgFormMinStock}
+                    onChange={(e) => setPkgFormMinStock(Math.max(1, Number(e.target.value)))}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Harga Modal / Unit */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  Harga Beli Modal per {pkgFormUnit} (Rp) <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">Rp</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    required
+                    value={pkgFormCost}
+                    onChange={(e) => setPkgFormCost(Math.max(0, Number(e.target.value)))}
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black focus:outline-none focus:border-emerald-500 focus:bg-white"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 mt-1">Biaya ini akan dihitung ke HPP per porsi secara otomatis.</p>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAddPkgModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-xs font-bold text-white shadow-xs"
+                >
+                  Simpan Kemasan
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -2947,7 +3283,7 @@ export default function App() {
           <div className="bg-white w-full max-w-md rounded-3xl p-4 sm:p-5 shadow-2xl space-y-3.5 max-h-[94dvh] overflow-y-auto animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-xl bg-orange-100 text-orange-700">
+                <div className="p-1.5 rounded-xl bg-emerald-50 text-emerald-600">
                   <UtensilsCrossed className="w-4 h-4" />
                 </div>
                 <div>
@@ -2979,7 +3315,7 @@ export default function App() {
                   placeholder="Contoh: Rujak Cingur Komplit"
                   value={menuFormName}
                   onChange={(e) => setMenuFormName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-orange-500 focus:bg-white"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
                 />
               </div>
 
@@ -2990,7 +3326,7 @@ export default function App() {
                   <select
                     value={menuFormCategory}
                     onChange={(e) => setMenuFormCategory(e.target.value as 'Rujak' | 'Extra' | 'Pelengkap')}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-orange-500 focus:bg-white"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
                   >
                     <option value="Rujak">🍍 Rujak</option>
                     <option value="Extra">🌶️ Extra / Topping</option>
@@ -3001,7 +3337,7 @@ export default function App() {
                 <div>
                   <label className="text-[11px] font-bold text-slate-700 block mb-1">Ikon / Emoji</label>
                   <div className="flex items-center gap-2">
-                    <span className="text-xl p-1.5 bg-orange-50 rounded-xl border border-orange-200 shrink-0">
+                    <span className="text-xl p-1.5 bg-emerald-50 rounded-xl border border-emerald-200 shrink-0">
                       {menuFormImage || '🍍'}
                     </span>
                     <input
@@ -3009,7 +3345,7 @@ export default function App() {
                       maxLength={4}
                       value={menuFormImage}
                       onChange={(e) => setMenuFormImage(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-orange-500 text-center"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-none focus:border-emerald-500 text-center"
                       placeholder="🍍"
                     />
                   </div>
@@ -3026,7 +3362,7 @@ export default function App() {
                       key={emoji}
                       onClick={() => setMenuFormImage(emoji)}
                       className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-all ${
-                        menuFormImage === emoji ? 'bg-orange-500 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200'
+                        menuFormImage === emoji ? 'bg-emerald-500 text-white shadow-xs font-bold' : 'bg-slate-100 hover:bg-slate-200'
                       }`}
                     >
                       {emoji}
@@ -3049,14 +3385,14 @@ export default function App() {
                     required
                     value={menuFormPrice}
                     onChange={(e) => setMenuFormPrice(Math.max(0, Number(e.target.value)))}
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-xs focus:outline-none focus:border-orange-500 focus:bg-white"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black text-xs focus:outline-none focus:border-emerald-500 focus:bg-white"
                   />
                 </div>
                 
                 {/* Auto Calculated Online Price Preview */}
-                <div className="mt-1.5 p-2 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-between text-[10px]">
-                  <span className="text-orange-900">Estimasi Online (GoFood 20%):</span>
-                  <span className="font-extrabold text-orange-700">
+                <div className="mt-1.5 p-2 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-[10px]">
+                  <span className="text-emerald-700 font-medium">Estimasi Online (GoFood 20%):</span>
+                  <span className="font-extrabold text-emerald-600">
                     Rp {(Math.ceil((menuFormPrice / 0.8) / 1000) * 1000).toLocaleString('id-ID')}
                   </span>
                 </div>
@@ -3072,7 +3408,7 @@ export default function App() {
                   placeholder="Contoh: Mangga muda, nanas madu, jambu air, bumbu sambal aren pedas gurih..."
                   value={menuFormDesc}
                   onChange={(e) => setMenuFormDesc(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 focus:bg-white resize-none"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-emerald-500 focus:bg-white resize-none"
                 />
               </div>
 
@@ -3086,7 +3422,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-xs font-bold text-white shadow-xs"
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-xs font-bold text-white shadow-xs"
                 >
                   {editingMenuItem ? 'Simpan Perubahan' : 'Tambah ke Menu'}
                 </button>
@@ -3102,7 +3438,7 @@ export default function App() {
           <div className="bg-white w-full max-w-xs rounded-3xl p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-amber-600" />
+                <ShieldCheck className="w-5 h-5 text-emerald-500" />
                 <h3 className="text-sm font-extrabold text-slate-900">Verifikasi PIN Owner</h3>
               </div>
               <button onClick={() => setShowRoleModal(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
@@ -3124,7 +3460,7 @@ export default function App() {
                   setPinInput(e.target.value);
                   setPinError('');
                 }}
-                className="w-full text-center text-xl tracking-widest p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-amber-500 font-mono"
+                className="w-full text-center text-xl tracking-widest p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:border-emerald-500 font-mono"
               />
 
               {pinError && (
@@ -3141,7 +3477,7 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-xs font-bold text-white shadow-xs"
+                  className="flex-1 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-700 text-xs font-bold text-white shadow-xs"
                 >
                   Buka Akses
                 </button>
@@ -3156,14 +3492,14 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[96dvh] animate-in zoom-in-95 duration-150">
             
-            <div className="p-3 bg-slate-900 text-white flex items-center justify-between shrink-0">
+            <div className="p-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
-                <Printer className="w-4 h-4 text-orange-400" />
+                <Printer className="w-4 h-4 text-white" />
                 <span className="text-xs font-bold">Struk Pembayaran Thermal</span>
               </div>
               <button
                 onClick={() => setShowReceiptModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-300 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -3290,7 +3626,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   onClick={handleBluetoothPrint}
-                  className="py-2 px-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs"
+                  className="py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-xs"
                 >
                   <Printer className="w-4 h-4 shrink-0" />
                   <span className="truncate">Cetak Bluetooth</span>
